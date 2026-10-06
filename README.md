@@ -19,8 +19,9 @@ A lightweight antivirus daemon written in Bash. It watches a directory, flags fi
 
 ```
 .
-├── antivirus.sh          # Scanner daemon: detects and quarantines malicious files
+├── antivirusd.sh         # Scanner daemon: detects and quarantines malicious files
 ├── restore.sh            # Interactive tool: restore or permanently delete quarantined files
+├── Makefile              # Shortcuts: make run / make restore (creates malicious_dir first)
 ├── whitelist.txt         # (generated) filenames that the scanner must ignore
 ├── directory-info.last   # (generated) snapshot of the source directory after the last scan
 ├── directory-info.new    # (generated) snapshot of the source directory taken each cycle
@@ -29,12 +30,12 @@ A lightweight antivirus daemon written in Bash. It watches a directory, flags fi
 
 > `whitelist.txt`, `directory-info.last` and `directory-info.new` are created automatically at runtime. They are created in the **current working directory** of whoever launches the scripts (see the note in [Section 6](#6-the-whitelist-how-files-get-added-and-how-the-daemon-checks-it)).
 
-### `antivirus.sh`
+### `antivirusd.sh`
 
 Usage:
 
 ```
-./antivirus.sh <source_directory> <quarantine_directory> <interval-seconds>
+./antivirusd.sh <source_directory> <quarantine_directory> <interval-seconds>
 ```
 
 What it does:
@@ -45,6 +46,24 @@ What it does:
 4. The **first cycle always scans**. After that, a scan only runs when the listing changed (file added, removed, resized, or modified). Otherwise it prints `No changes detected`.
 5. During a scan, every file in the source directory is checked against the flagged extensions and flagged keywords. A matching file that is **not whitelisted** is moved to the quarantine directory.
 6. It prints how many files were quarantined, updates the snapshot, then sleeps for `<interval-seconds>` before the next cycle.
+
+### `Makefile`
+
+Convenience wrapper around the two scripts. It does not compile anything. It provides:
+
+| Target | What it does |
+|---|---|
+| `make pre-build` | Creates `malicious_dir` if it does not already exist |
+| `make run` | Runs `antivirusd.sh` with its three required arguments (runs `pre-build` first) |
+| `make restore` | Runs `restore.sh` with its two required arguments (runs `pre-build` first) |
+
+Variables (defaults shown, override on the command line):
+
+| Variable | Default | Used as |
+|---|---|---|
+| `ORIGINAL_DIR` | `original_dir` | Source directory to scan / directory files are restored to |
+| `MALICIOUS_DIR` | `malicious_dir` | Quarantine directory |
+| `INTERVAL` | `10` | Seconds between scans |
 
 ### `restore.sh`
 
@@ -75,12 +94,13 @@ What it does:
 | `grep` | Keyword scanning and whitelist lookup | Yes |
 | `diffutils` (`cmp`) | Detecting changes in the directory snapshot | Usually yes |
 | `cron` | Scheduling the scan | Not always (missing on minimal installs and WSL) |
+| `make` | Running the Makefile targets (optional, the scripts also run directly) | Not always |
 
 Install everything that might be missing:
 
 ```bash
 sudo apt update
-sudo apt install -y bash grep diffutils cron
+sudo apt install -y bash grep diffutils cron make
 ```
 
 Make sure the cron service is enabled and running:
@@ -100,6 +120,7 @@ Verify the tools are available:
 bash --version
 cmp --version
 grep --version
+make --version
 ```
 
 ---
@@ -111,7 +132,7 @@ grep --version
 ```bash
 git clone <your-repo-url>
 cd <your-repo-folder>
-chmod +x antivirus.sh restore.sh
+chmod +x antivirusd.sh restore.sh
 ```
 
 ### Step 1: Create a test source directory
@@ -120,10 +141,12 @@ chmod +x antivirus.sh restore.sh
 mkdir -p ~/test_source
 ```
 
+> **Shortcut:** steps 2 and 4 below can also be done with the Makefile. See [Running with the Makefile](#running-with-the-makefile).
+
 ### Step 2: Start the antivirus
 
 ```bash
-./antivirus.sh ~/test_source ~/quarantine 10
+./antivirusd.sh ~/test_source ~/quarantine 10
 ```
 
 This scans `~/test_source` every 10 seconds and quarantines flagged files into `~/quarantine` (created automatically). Expected first output:
@@ -174,11 +197,44 @@ Restored notes.txt to /home/you/test_source.
 
 After choosing option 1, the file is moved back **and** whitelisted, so the antivirus will leave it alone from now on.
 
+### Running with the Makefile
+
+The Makefile uses `original_dir` and `malicious_dir` in the project folder by default. Create the source directory once (the Makefile only creates the quarantine directory):
+
+```bash
+mkdir -p original_dir
+```
+
+Start the antivirus (creates `malicious_dir` automatically if needed):
+
+```bash
+make run
+```
+
+Review and restore quarantined files (in a second terminal, same folder):
+
+```bash
+make restore
+```
+
+Use different directories or a different interval:
+
+```bash
+make run ORIGINAL_DIR=/home/you/test_source MALICIOUS_DIR=/home/you/quarantine INTERVAL=5
+make restore ORIGINAL_DIR=/home/you/test_source MALICIOUS_DIR=/home/you/quarantine
+```
+
+Both targets run from the Makefile's folder, so the antivirus and the restore tool automatically share the same `whitelist.txt`.
+
+> The cron job in [Section 5](#5-configuring-the-cron-job) calls `antivirusd.sh` directly and does not use the Makefile.
+
+---
+
 ---
 
 ## 4. Flagged Extensions and Keywords: Where They Are Defined
 
-Both lists live in **`antivirus.sh`**.
+Both lists live in **`antivirusd.sh`**.
 
 ### Flagged extensions
 
@@ -227,7 +283,7 @@ Run the antivirus on the **3rd Friday of every month at 12:31 AM**.
 Complete all of these first:
 
 - [ ] `cron` is installed and running (see [Section 2](#2-prerequisites-ubuntu))
-- [ ] Both scripts are executable: `chmod +x antivirus.sh restore.sh`
+- [ ] Both scripts are executable: `chmod +x antivirusd.sh restore.sh`
 - [ ] The source directory already exists (the script exits with an error if it does not)
 - [ ] You tested the script manually at least once (see [Section 3](#3-running-the-tools))
 - [ ] You know the **absolute paths** of the project folder, source directory and quarantine directory. Cron does not run from your project folder and does not understand `~` reliably, so relative paths will fail. Get the project path with:
@@ -239,7 +295,7 @@ Complete all of these first:
 ### The cron expression
 
 ```
-31 0 15-21 * * [ "$(date +\%u)" = "5" ] && cd /home/you/antivirus && ./antivirus.sh /home/you/test_source /home/you/quarantine 60 >> /home/you/antivirus/cron.log 2>&1
+31 0 15-21 * * [ "$(date +\%u)" = "5" ] && cd /home/you/antivirus && ./antivirusd.sh /home/you/test_source /home/you/quarantine 60 >> /home/you/antivirus/cron.log 2>&1
 ```
 
 Field breakdown:
@@ -257,7 +313,7 @@ Field breakdown:
 
 **Why `\%`:** in a crontab, an unescaped `%` is treated as a newline. Inside a script or terminal you would write `date +%u`.
 
-**Why `cd` first:** `antivirus.sh` writes `directory-info.*` and reads `whitelist.txt` using relative paths. Cron starts in your home directory, so without `cd` the scanner would not find the whitelist that `restore.sh` created.
+**Why `cd` first:** `antivirusd.sh` writes `directory-info.*` and reads `whitelist.txt` using relative paths. Cron starts in your home directory, so without `cd` the scanner would not find the whitelist that `restore.sh` created.
 
 ### Step-by-step setup
 
@@ -301,17 +357,17 @@ Field breakdown:
 
 ### Important note: the scanner is a daemon
 
-`antivirus.sh` contains a `while true` loop, so once cron starts it, it keeps running until it is stopped. A new instance will be launched on each 3rd Friday while older ones may still be running. To check for running instances and stop them:
+`antivirusd.sh` contains a `while true` loop, so once cron starts it, it keeps running until it is stopped. A new instance will be launched on each 3rd Friday while older ones may still be running. To check for running instances and stop them:
 
 ```bash
-pgrep -af antivirus.sh
-pkill -f antivirus.sh
+pgrep -af antivirusd.sh
+pkill -f antivirusd.sh
 ```
 
 To prevent duplicate instances you can wrap the command in `flock`:
 
 ```
-31 0 15-21 * * [ "$(date +\%u)" = "5" ] && cd /home/you/antivirus && flock -n /tmp/antivirus.lock ./antivirus.sh /home/you/test_source /home/you/quarantine 60 >> /home/you/antivirus/cron.log 2>&1
+31 0 15-21 * * [ "$(date +\%u)" = "5" ] && cd /home/you/antivirus && flock -n /tmp/antivirus.lock ./antivirusd.sh /home/you/test_source /home/you/quarantine 60 >> /home/you/antivirus/cron.log 2>&1
 ```
 
 ---
@@ -350,7 +406,7 @@ Options 2 (delete) and 3 (go back) never touch the whitelist. You can also add o
 
 ### How the daemon checks it
 
-The check happens in `antivirus.sh`, inside the scan loop, **after** a file has already been flagged as malicious:
+The check happens in `antivirusd.sh`, inside the scan loop, **after** a file has already been flagged as malicious:
 
 ```bash
 if [[ "$file" =~ $REGEX ]] || grep -qiE "trojan|malware|virus|worm|ransomware" "$file"; then
