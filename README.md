@@ -112,19 +112,6 @@ systemctl status cron
 
 You should see `active (running)`.
 
-> **WSL users:** systemd may not be enabled. If `systemctl` fails, start cron with `sudo service cron start`.
-
-Verify the tools are available:
-
-```bash
-bash --version
-cmp --version
-grep --version
-make --version
-```
-
----
-
 ## 3. Running the Tools
 
 ### Step 0: Get the scripts and make them executable
@@ -226,8 +213,6 @@ make restore ORIGINAL_DIR=/home/you/test_source MALICIOUS_DIR=/home/you/quaranti
 
 Both targets run from the Makefile's folder, so the antivirus and the restore tool automatically share the same `whitelist.txt`.
 
-> The cron job in [Section 5](#5-configuring-the-cron-job) calls `antivirusd.sh` directly and does not use the Makefile.
-
 ---
 
 ---
@@ -283,7 +268,6 @@ Run the antivirus on the **3rd Friday of every month at 12:31 AM**.
 Complete all of these first:
 
 - [ ] `cron` is installed and running (see [Section 2](#2-prerequisites-ubuntu))
-- [ ] Both scripts are executable: `chmod +x antivirusd.sh restore.sh`
 - [ ] The source directory already exists (the script exits with an error if it does not)
 - [ ] You tested the script manually at least once (see [Section 3](#3-running-the-tools))
 - [ ] You know the **absolute paths** of the project folder, source directory and quarantine directory. Cron does not run from your project folder and does not understand `~` reliably, so relative paths will fail. Get the project path with:
@@ -295,7 +279,7 @@ Complete all of these first:
 ### The cron expression
 
 ```
-31 0 15-21 * * [ "$(date +\%u)" = "5" ] && cd /home/you/antivirus && ./antivirusd.sh /home/you/test_source /home/you/quarantine 60 >> /home/you/antivirus/cron.log 2>&1
+31 0 15-21 * * [ "$(date +\%u)" = "5" ] && cd /home/you/antivirus && ./antivirus-cron.sh /home/you/test_source /home/you/quarantine 60
 ```
 
 Field breakdown:
@@ -308,12 +292,6 @@ Field breakdown:
 | Month | `*` | Every month |
 | Day of week | `*` | Left as `*` on purpose (see below) |
 | Command | `[ "$(date +\%u)" = "5" ] && ...` | Only run if today is Friday (`date +%u` returns `5`) |
-
-**Why the weekday check is in the command and not in the 5th field:** in standard cron, when both day-of-month and day-of-week are restricted, the job runs when **either** matches. Writing `31 0 15-21 * 5` would run on every day from the 15th to the 21st **and** on every Friday. Restricting the day range in cron and testing the weekday in the command makes both conditions required.
-
-**Why `\%`:** in a crontab, an unescaped `%` is treated as a newline. Inside a script or terminal you would write `date +%u`.
-
-**Why `cd` first:** `antivirusd.sh` writes `directory-info.*` and reads `whitelist.txt` using relative paths. Cron starts in your home directory, so without `cd` the scanner would not find the whitelist that `restore.sh` created.
 
 ### Step-by-step setup
 
@@ -334,43 +312,6 @@ Field breakdown:
    ```bash
    crontab -l
    ```
-
-5. **Test the schedule logic without waiting for the 3rd Friday.** Temporarily replace the time fields with `* * * * *` and replace `"5"` with today's weekday number (`date +%u`), then:
-
-   ```bash
-   tail -f /home/you/antivirus/cron.log
-   ```
-
-   Within a minute you should see the scan output. **Restore the real schedule afterwards.**
-
-6. **Check that cron actually fired the job:**
-
-   ```bash
-   grep CRON /var/log/syslog | tail
-   ```
-
-   or, on systems using journald:
-
-   ```bash
-   journalctl -u cron --since "10 minutes ago"
-   ```
-
-### Important note: the scanner is a daemon
-
-`antivirusd.sh` contains a `while true` loop, so once cron starts it, it keeps running until it is stopped. A new instance will be launched on each 3rd Friday while older ones may still be running. To check for running instances and stop them:
-
-```bash
-pgrep -af antivirusd.sh
-pkill -f antivirusd.sh
-```
-
-To prevent duplicate instances you can wrap the command in `flock`:
-
-```
-31 0 15-21 * * [ "$(date +\%u)" = "5" ] && cd /home/you/antivirus && flock -n /tmp/antivirus.lock ./antivirusd.sh /home/you/test_source /home/you/quarantine 60 >> /home/you/antivirus/cron.log 2>&1
-```
-
----
 
 ## 6. The Whitelist: How Files Get Added and How the Daemon Checks It
 
