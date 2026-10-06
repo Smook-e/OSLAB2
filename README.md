@@ -20,6 +20,7 @@ A lightweight antivirus daemon written in Bash. It watches a directory, flags fi
 ```
 .
 ├── antivirusd.sh         # Scanner daemon: detects and quarantines malicious files
+├── antivirus-cron.sh     # Used for cron jobs
 ├── restore.sh            # Interactive tool: restore or permanently delete quarantined files
 ├── Makefile              # Shortcuts: make run / make restore (creates malicious_dir first)
 ├── whitelist.txt         # (generated) filenames that the scanner must ignore
