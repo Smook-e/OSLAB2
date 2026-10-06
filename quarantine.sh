@@ -40,7 +40,13 @@ while true; do
 
 
         for file in "$SOURCE_DIR"/*; do
+            filename=$(basename "$file")
             if [[ "$file" =~ $REGEX ]] || grep -qiE "trojan|malware|virus|worm|ransomware" "$file"; then
+                if [ -f "whitelist.txt" ]; then
+                    if grep -Fxq "$filename" "whitelist.txt"; then
+                            continue
+                    fi
+                fi
                 echo ""$file" is malicious and it is DELETED"
                 mv "$file" "$QUARANTINE_DIR/"       
                 ((infected_count++))

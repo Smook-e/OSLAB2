@@ -61,6 +61,7 @@ while true; do
         1)
             mkdir -p "$ORIGINAL_DIR"
             mv "$selected_file" "$ORIGINAL_DIR/"
+            echo "$filename" >> "whitelist.txt"
             echo "Restored $filename to $ORIGINAL_DIR."
             ;;
         2)
