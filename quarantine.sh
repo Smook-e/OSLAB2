@@ -1,6 +1,6 @@
 #!/bin/bash
 
-if [ $# -eq 0 ]; then
+if [ $# -ne 3 ]; then
     echo "Usage: $0 <source_directory> <quarantine_directory> <interval-seconds>"
     exit 1
 fi
